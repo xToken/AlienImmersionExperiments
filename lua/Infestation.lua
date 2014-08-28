@@ -17,19 +17,16 @@ PrecacheAsset("models/alien/infestation/infestation_blob.model")
 Script.Load("lua/InfestationCache.lua")
 
 local kInfestationDecalMaterial = PrecacheAsset("materials/infestation/infestation_decal.material")
-local kInfestationDecalSimpleMaterial = PrecacheAsset("materials/infestation/infestation_decal_simple.material")
 
 local kInfestation = {}
 local kDirtyTable = {}
 local kInfestationBlobCount = 0
-local kInfestationBlobDepth = 1
-local kInfestationBlobDecals = 0
-local kInfestationOverhead = false
+local kInfestationShellCount = 20
+local kInfestationLowQuality = false
 
 //Globals?
-gInfestationMaxDepth = 1
+gInfestationMaxShells = 100
 gInfestationMaxBlobs = 100
-gInfestationMaxDecals = 50
 
 class 'Infestation'
 
@@ -59,19 +56,17 @@ local function DestroyClientGeometry(self)
         Client.DestroyRenderModelArray(self.infestationShellModelArray)
         self.infestationShellModelArray = nil
     end
-    
-    if self.infestationDecals ~= nil then
+	
+	if self.infestationMaterial then
+		Client.DestroyRenderMaterial(self.infestationMaterial)
+		self.infestationMaterial = nil
+	end
+	
+	if self.infestationDecals ~= nil then
         for i=1,#self.infestationDecals do
             Client.DestroyRenderDecal(self.infestationDecals[i])
         end
         self.infestationDecals = nil
-    end
-	
-	if self.infestationMaterials ~= nil then
-        for i=1,#self.infestationMaterials do
-            Client.DestroyRenderMaterial(self.infestationMaterials[i])
-        end
-        self.infestationMaterials = nil
     end
   
     self.hasClientGeometry = false
@@ -79,7 +74,7 @@ local function DestroyClientGeometry(self)
 end
 
 
-function CreateInfestationModelArray(modelName, blobCoords, origin, radiusScale, radiusScale2 )
+function CreateInfestationModelArray(modelName, blobCoords, origin, radiusScale, radiusScale2, limit)
 
     local modelArray = nil
     
@@ -90,7 +85,7 @@ function CreateInfestationModelArray(modelName, blobCoords, origin, radiusScale,
         
         for index, coords in ipairs(blobCoords) do
 
-			if numModels >= kInfestationBlobCount then
+			if numModels >= limit then
 				break
 			end
 			
@@ -112,7 +107,7 @@ function CreateInfestationModelArray(modelName, blobCoords, origin, radiusScale,
             modelArray:InstanceMaterials()
 
             modelArray:SetModel(modelName)
-            modelArray:SetModels( coordsArray )
+            modelArray:SetModels(coordsArray)
 
         end
         
@@ -126,62 +121,56 @@ function CreateModelArrays(self)
     
     // Make blobs on the ground thinner to so that Skulks and buildings aren't
     // obscured.
-    local scale = self.blobDepth
+    local scale = 1
+	
     if self.coords.yAxis.y > 0.5 then
-        scale = scale * 0.75
+        scale = 0.75
     end
     
     local origin = self.coords.origin
 
-    self.infestationModelArray = CreateInfestationModelArray( "models/alien/infestation/infestation_blob.model", self.blobCoords, origin, 1, 1 * scale )
-    self.infestationShellModelArray = CreateInfestationModelArray( "models/alien/infestation/infestation_shell.model", self.blobCoords, origin, 1.75, 1.25 * scale )
+    self.infestationModelArray = CreateInfestationModelArray( "models/alien/infestation/infestation_blob.model", self.blobCoords, origin, 1, scale, self.blobCount )
+    self.infestationShellModelArray = CreateInfestationModelArray( "models/alien/infestation/infestation_shell.model", self.blobCoords, origin, self.shellSize, 1.25 * scale, self.shellCount)
     
 end
 
 local function CreateDecals(self)
 
     local decals = { }
-	local materials = { }
-	local materialsIndex = 0
+	
+	self.infestationMaterial = Client.CreateRenderMaterial()
+	self.infestationMaterial:SetMaterial(kInfestationDecalMaterial)
     
     for index, coords in ipairs(self.blobCoords) do
 	
-        local decal = Client.CreateRenderDecal()
-		
-		if self.coords.yAxis.y > 0.5 or kInfestationBlobDecals == 0 then
-		
-			decal:SetMaterial(self.infestationMaterial)		
-			decal:SetExtents(Vector(1.5, 0.1, 1.5))
-			
-		elseif materialsIndex <= kInfestationBlobDecals then
-		
-			local infestationMaterial = Client.CreateRenderMaterial()
-			infestationMaterial:SetMaterial(kInfestationDecalSimpleMaterial)
-			infestationMaterial:SetParameter("scale", 1)
-		    decal:SetMaterial(infestationMaterial)
-			materials[materialsIndex] = infestationMaterial
-			materialsIndex = materialsIndex + 1
-			decal:SetExtents(Vector(2, 2, 2))
+		if index > 50 then
+			break
 		end
-		
-        decal:SetCoords(coords)		
-        decals[index] = decal		
+
+        local decal = Client.CreateRenderDecal()
+        decal:SetMaterial(self.infestationMaterial)
+        decal:SetCoords(coords)
+        decal:SetExtents(Vector(1.5, 0.1, 1.5))
+        decals[index] = decal
         
     end
 
     self.infestationDecals = decals
-	self.infestationMaterials = materials
-	
+
 end
 
 local function CreateClientGeometry(self)
 
 	self.blobCount = kInfestationBlobCount
-	self.blobDepth = kInfestationBlobDepth
-	self.decalCount = kInfestationBlobDecals
+	self.shellCount = kInfestationShellCount
+	self.shellSize = kInfestationShellSize
+	self.lowquality = kInfestationLowQuality
 	
-    CreateModelArrays(self)
-    CreateDecals(self)
+	if self.lowquality then
+		CreateDecals(self)
+	else
+	    CreateModelArrays(self)
+	end
 	
     self.hasClientGeometry = true
     
@@ -198,14 +187,7 @@ function Infestation:Initialize()
     
     self.maxRadius = kMaxRadius
     self.blobCoords = { }
-	
-	if Client then
-    
-        self.infestationMaterial = Client.CreateRenderMaterial()
-        self.infestationMaterial:SetMaterial(kInfestationDecalMaterial)
-    
-    end
-    
+
     self.destroyed = false
     
     table.insertunique(kDirtyTable, self)
@@ -218,13 +200,6 @@ function Infestation:Uninitialize()
     if Client then
     
         DestroyClientGeometry(self)
-		
-		if self.infestationMaterial then
-        
-            Client.DestroyRenderMaterial(self.infestationMaterial)
-            self.infestationMaterial = nil
-        
-        end
         
         self.destroyed = true
     
@@ -324,7 +299,7 @@ function Infestation:RenderInfestation(generateBlobs)
     
     end
     
-    local qualityChanged = (self.blobCount ~= kInfestationBlobCount or self.blobDepth ~= kInfestationBlobDepth or self.decalCount ~= kInfestationBlobDecals)
+    local qualityChanged = self.blobCount ~= kInfestationBlobCount or self.shellCount ~= kInfestationShellCount or self.shellSize ~= kInfestationShellSize or self.lowquality ~= kInfestationLowQuality
     
     if qualityChanged then
         DestroyClientGeometry(self)
@@ -343,21 +318,30 @@ function Infestation:RenderInfestation(generateBlobs)
     amount = amount * (1 - self.cloakFraction)
     
     if self.infestationModelArray then
+	
     
 		self.infestationModelArray:SetMaterialParameter("amount", amount)
 		self.infestationModelArray:SetMaterialParameter("origin", origin)
 		self.infestationModelArray:SetMaterialParameter("maxRadius", self.maxRadius)
 		
+	end
+	
+	if self.infestationShellModelArray then
+	
 		self.infestationShellModelArray:SetMaterialParameter("amount", amount)
 		self.infestationShellModelArray:SetMaterialParameter("origin", origin)
 		self.infestationShellModelArray:SetMaterialParameter("maxRadius", self.maxRadius)
 		
 	end
 	
-	self.infestationMaterial:SetParameter("amount", amount)
-	self.infestationMaterial:SetParameter("origin", origin)
-	self.infestationMaterial:SetParameter("maxRadius", self.maxRadius)
-
+	if self.infestationDecals then
+    
+        self.infestationMaterial:SetParameter("amount", amount)
+        self.infestationMaterial:SetParameter("origin", origin)
+        self.infestationMaterial:SetParameter("maxRadius", self.maxRadius)
+        
+    end
+	
 end
 
 // only called when the infestation actually changed
@@ -428,7 +412,7 @@ if Server then
 		
 		end
 		
-		kDirtyTable = {}
+		kDirtyTable = { }
 
 	end
 
@@ -478,15 +462,18 @@ elseif Client then
 
     function Infestation_SyncOptions()
 	
-		kInfestationBlobCount = Clamp(Client.GetOptionInteger("graphics/infestationBlobCount", 50), 0, gInfestationMaxBlobs)
-		kInfestationBlobDepth = Clamp(Client.GetOptionFloat("graphics/infestationBlobDepth", 0.75), 0, gInfestationMaxDepth)
-		kInfestationBlobDecals = Clamp(Client.GetOptionInteger("graphics/infestationBlobDepth", 10), 0, gInfestationMaxDecals)
+		kInfestationBlobCount = Clamp(Client.GetOptionInteger("graphics/infestationBlobCount", 20), 0, gInfestationMaxBlobs)
+		kInfestationShellCount = Clamp(Client.GetOptionInteger("graphics/infestationShellCount", 20), 0, gInfestationMaxShells)
+		
 		//Testing
 		kInfestationBlobCount = 0
-		kInfestationBlobDepth = 1
-		kInfestationBlobDecals = 10
+		kInfestationShellCount = 20
+		kInfestationShellSize = 1.5
+		kInfestationLowQuality = false
+		
 		//Might need to always set this to rich?
-        Client.SetRenderSetting("infestation", "rich")
+		Client.SetRenderSetting("infestation", "rich")
+		
         // mark all as dirty to update quality
         table.copy(kInfestation, kDirtyTable)
         
@@ -495,42 +482,48 @@ elseif Client then
     Event.Hook("LoadComplete", Infestation_SyncOptions)
     
     function Infestation_UpdateForPlayer()
-        
-        // Change the texture scale when we're viewing top down to reduce the
-        // tiling and make it look better.
-		// This doesnt need to be set EVERY frame does it?... It does..		
-		local isOverhead = PlayerUI_IsOverhead()
-        if isOverhead then
+		if PlayerUI_IsOverhead() then
             Client.SetRenderSetting("infestation_scale", 0.15)
         else
-			Client.SetRenderSetting("infestation_scale", 0.30)
+            Client.SetRenderSetting("infestation_scale", 0.30)
         end
-
     end
 	
-	local function UpdateInfestationDecals(decals)
-		kInfestationBlobDecals = tonumber(decals or 10)
-		table.copy(kInfestation, kDirtyTable)
-		Shared.Message(string.format("Infestation Decals set to %s", kInfestationBlobDecals))
-	end
-	
-	Event.Hook("Console_infestdecals", UpdateInfestationDecals)
-	
 	local function UpdateInfestationBlobs(blobs)
-		kInfestationBlobCount = tonumber(blobs or 50)
+		kInfestationBlobCount = tonumber(blobs or 0)
+		kInfestationBlobCount = math.min(kInfestationBlobCount, gInfestationMaxBlobs)
 		table.copy(kInfestation, kDirtyTable)
 		Shared.Message(string.format("Infestation Blobs set to %s", kInfestationBlobCount))
 	end
 	
-	Event.Hook("Console_infestblobs", UpdateInfestationBlobs)
+	Event.Hook("Console_infestationblobs", UpdateInfestationBlobs)
 	
-	local function UpdateInfestationDepth(depth)
-		kInfestationBlobDepth = tonumber(depth or 1)
+	local function UpdateInfestationShells(shells)
+		kInfestationShellCount = tonumber(shells or 20)
+		kInfestationShellCount = math.min(kInfestationShellCount, gInfestationMaxShells)
 		table.copy(kInfestation, kDirtyTable)
-		Shared.Message(string.format("Infestation Depth set to %s", kInfestationBlobDepth))
+		Shared.Message(string.format("Infestation Shells set to %s", kInfestationShellCount))
 	end
 	
-	Event.Hook("Console_infestdepth", UpdateInfestationDepth)
+	Event.Hook("Console_infestationshells", UpdateInfestationShells)
+	
+	local function UpdateInfestationQuality(high)
+		kInfestationLowQuality = high and true or false
+		table.copy(kInfestation, kDirtyTable)
+		Shared.Message(string.format("Infestation Quality set to %s", ToString(kInfestationLowQuality)))
+	end
+	
+	Event.Hook("Console_infestationquality", UpdateInfestationQuality)
+	
+	local function UpdateInfestationRender(setting)
+		kInfestationRenderQuality = setting and true or false 
+		local rsetting = kInfestationRenderQuality and "rich" or "minimal"
+		Client.SetRenderSetting("infestation", rsetting)
+		table.copy(kInfestation, kDirtyTable)
+		Shared.Message(string.format("Infestation Render Mode set to %s", rsetting))
+	end
+	
+	Event.Hook("Console_infestationrender", UpdateInfestationRender)
 
 end
 

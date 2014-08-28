@@ -1,4 +1,4 @@
 modEntry = [[
-	Client: lua/CystChanges.lua,
+	Client: lua/CoreChanges.lua,
 	Priority: 100
 ]]
