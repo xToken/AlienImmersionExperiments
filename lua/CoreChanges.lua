@@ -1,4 +1,7 @@
-// Try cysts for starters
+// Alien Immersion Experiments
+// Source located at - https://github.com/xToken/AlienImmersionExperiments
+// lua\CoreChanges.lua
+// - Dragon
 
 Script.Load("lua/Infestation_Client_BlobPatterns.lua")
 Script.Load( "lua/AlienImmersion/Elixer_Utility.lua" )
@@ -7,6 +10,7 @@ Elixer.UseVersion( 1.72 )
 /*
 Script.Load( "lua/BioluminesceMixin.lua" )
 
+// Try cysts for starters
 local originalCystOnCreate
 originalCystOnCreate = Class_ReplaceMethod("Cyst", "OnCreate",
 	function(self)

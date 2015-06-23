@@ -1,6 +1,8 @@
-//    
-// lua\BioluminesceMixin.lua    
-//    
+// Alien Immersion Experiments
+// Source located at - https://github.com/xToken/AlienImmersionExperiments
+// lua\BioluminesceMixin.lua
+// - Dragon
+
 if Client then
 
 	BioluminesceMixin = CreateMixin(BioluminesceMixin)
